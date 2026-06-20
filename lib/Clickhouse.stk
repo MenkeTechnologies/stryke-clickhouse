@@ -1,0 +1,217 @@
+## lib/Clickhouse.stk — ClickHouse client for stryke (`use Clickhouse`).
+##
+## Thin wrapper around the `stryke-clickhouse` cdylib's `clickhouse__*`
+## exports. The cdylib is dlopened in-process on first `use Clickhouse` and
+## registers each export via `rust_ffi::load_cdylib`. Every wrapper builds a
+## JSON args dict, calls the FFI symbol, and parses the JSON return.
+##
+## Transport is ClickHouse's HTTP interface (port 8123) over a cached
+## `ureq::Agent` keyed by `(base_url, auth, database)`. SELECTs come back as
+## `{ meta, data, rows, statistics }`; the `query_*` helpers peel off the part
+## you want.
+
+package Clickhouse
+
+# ── error dispatch ────────────────────────────────────────────────────
+
+## Decode a `clickhouse__*` JSON return; die on a reported error.
+fn Clickhouse::_decode ($name, $json) {
+    val $o = from_json $json
+    if (ref $o eq "HASH" && exists $o->{error}) {
+        die "Clickhouse::$name: $o->{error}"
+    }
+    $o
+}
+
+## Build the request hash: connection params from %opts plus per-op fields.
+## Falls back to $CLICKHOUSE_URL when neither `url` nor `host` is given.
+fn Clickhouse::_req ($extra, $opts) {
+    var %r = %$extra
+    for val $k (qw(url host port username password database tls params)) {
+        $r{$k} = $opts->{$k} if exists $opts->{$k} && defined $opts->{$k}
+    }
+    if (!exists $r{url} && !exists $r{host} && defined $ENV{CLICKHOUSE_URL}) {
+        $r{url} = $ENV{CLICKHOUSE_URL}
+    }
+    \%r
+}
+
+# ── version + liveness ────────────────────────────────────────────────
+
+## Package version string.
+fn Clickhouse::version {
+    Clickhouse::_decode("version", clickhouse__version("{}"))->{version}
+}
+
+## Connectivity probe (`GET /ping`) — 1 on success, 0 otherwise.
+fn Clickhouse::ping (%opts) {
+    val $r = Clickhouse::_req({}, \%opts)
+    Clickhouse::_decode("ping", clickhouse__ping(to_json($r)))->{value}
+}
+
+## Server version string (`SELECT version()`).
+fn Clickhouse::server_version (%opts) {
+    val $r = Clickhouse::_req({}, \%opts)
+    Clickhouse::_decode("server_version", clickhouse__server_version(to_json($r)))->{value}
+}
+
+# ── query ─────────────────────────────────────────────────────────────
+
+## Run a SELECT; returns the full `{ meta, data, rows, statistics }` object.
+fn Clickhouse::query ($sql, %opts) {
+    val $r = Clickhouse::_req({ sql => $sql }, \%opts)
+    Clickhouse::_decode("query", clickhouse__query(to_json($r)))
+}
+
+## Run a SELECT; returns just the array of row objects.
+fn Clickhouse::query_rows ($sql, %opts) {
+    val $r = Clickhouse::_req({ sql => $sql }, \%opts)
+    @{ Clickhouse::_decode("query_rows", clickhouse__query_rows(to_json($r)))->{value} }
+}
+
+## Run a SELECT; returns the first row object (or undef).
+fn Clickhouse::query_row ($sql, %opts) {
+    val $r = Clickhouse::_req({ sql => $sql }, \%opts)
+    Clickhouse::_decode("query_row", clickhouse__query_row(to_json($r)))->{value}
+}
+
+## Run a SELECT; returns the first column of the first row (a scalar).
+fn Clickhouse::query_value ($sql, %opts) {
+    val $r = Clickhouse::_req({ sql => $sql }, \%opts)
+    Clickhouse::_decode("query_value", clickhouse__query_value(to_json($r)))->{value}
+}
+
+## Run a no-row statement (CREATE/INSERT/ALTER/DROP/…). Returns truthy on ok.
+fn Clickhouse::exec ($sql, %opts) {
+    val $r = Clickhouse::_req({ sql => $sql }, \%opts)
+    Clickhouse::_decode("exec", clickhouse__exec(to_json($r)))->{ok}
+}
+
+## Bulk insert $rows (arrayref of hashrefs) into $table via JSONEachRow.
+## Returns the number of rows sent.
+fn Clickhouse::insert ($table, $rows, %opts) {
+    val $list = ref($rows) eq "ARRAY" ? $rows : [$rows]
+    val $r = Clickhouse::_req({ table => $table, rows => $list }, \%opts)
+    Clickhouse::_decode("insert", clickhouse__insert(to_json($r)))->{count}
+}
+
+# ── schema introspection ──────────────────────────────────────────────
+
+## Array of database names.
+fn Clickhouse::databases (%opts) {
+    val $r = Clickhouse::_req({}, \%opts)
+    @{ Clickhouse::_decode("databases", clickhouse__databases(to_json($r)))->{value} }
+}
+
+## Array of table names in %opts{database} (default "default").
+fn Clickhouse::tables (%opts) {
+    val $r = Clickhouse::_req({ database => $opts{database} }, \%opts)
+    @{ Clickhouse::_decode("tables", clickhouse__tables(to_json($r)))->{value} }
+}
+
+## DESCRIBE TABLE $table — array of column descriptors.
+fn Clickhouse::describe ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table }, \%opts)
+    @{ Clickhouse::_decode("describe", clickhouse__describe(to_json($r)))->{value} }
+}
+
+## Row count of $table.
+fn Clickhouse::count ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table }, \%opts)
+    Clickhouse::_decode("count", clickhouse__count(to_json($r)))->{value}
+}
+
+## True when $table exists in %opts{database} (default "default").
+fn Clickhouse::table_exists ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table, database => $opts{database} }, \%opts)
+    Clickhouse::_decode("table_exists", clickhouse__table_exists(to_json($r)))->{value}
+}
+
+## All server settings (`system.settings`).
+fn Clickhouse::settings (%opts) {
+    val $r = Clickhouse::_req({}, \%opts)
+    @{ Clickhouse::_decode("settings", clickhouse__settings(to_json($r)))->{value} }
+}
+
+# ── DDL helpers ───────────────────────────────────────────────────────
+
+## CREATE DATABASE IF NOT EXISTS $name.
+fn Clickhouse::create_database ($name, %opts) {
+    val $r = Clickhouse::_req({ name => $name }, \%opts)
+    Clickhouse::_decode("create_database", clickhouse__create_database(to_json($r)))->{ok}
+}
+
+## DROP DATABASE IF EXISTS $name.
+fn Clickhouse::drop_database ($name, %opts) {
+    val $r = Clickhouse::_req({ name => $name }, \%opts)
+    Clickhouse::_decode("drop_database", clickhouse__drop_database(to_json($r)))->{ok}
+}
+
+## Create a table. Either %opts{sql} (full CREATE) or $name + %opts{columns}
+## ("col Type, …") + %opts{engine} (default MergeTree) + %opts{order_by}.
+fn Clickhouse::create_table ($name, %opts) {
+    val $r = Clickhouse::_req(
+        {
+            name     => $name,
+            sql      => $opts{sql},
+            columns  => $opts{columns},
+            engine   => $opts{engine},
+            order_by => $opts{order_by},
+        },
+        \%opts
+    )
+    Clickhouse::_decode("create_table", clickhouse__create_table(to_json($r)))->{ok}
+}
+
+## DROP TABLE IF EXISTS $table.
+fn Clickhouse::drop_table ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table }, \%opts)
+    Clickhouse::_decode("drop_table", clickhouse__drop_table(to_json($r)))->{ok}
+}
+
+## TRUNCATE TABLE IF EXISTS $table.
+fn Clickhouse::truncate_table ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table }, \%opts)
+    Clickhouse::_decode("truncate_table", clickhouse__truncate_table(to_json($r)))->{ok}
+}
+
+## OPTIMIZE TABLE $table. %opts{final} appends FINAL.
+fn Clickhouse::optimize ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table, final => ($opts{final} ? \1 : \0) }, \%opts)
+    Clickhouse::_decode("optimize", clickhouse__optimize(to_json($r)))->{ok}
+}
+
+## Escape hatch: run arbitrary $sql. %opts{json} (default true) parses a
+## SELECT result; pass json => 0 for a no-row statement.
+fn Clickhouse::raw ($sql, %opts) {
+    val $r = Clickhouse::_req({ sql => $sql, json => ($opts{json} // \1) }, \%opts)
+    Clickhouse::_decode("raw", clickhouse__raw(to_json($r)))
+}
+
+# ── pure helpers (no connection) ──────────────────────────────────────
+
+## Escape $value for a single-quoted SQL literal.
+fn Clickhouse::escape ($value) {
+    Clickhouse::_decode("escape", clickhouse__escape_string(to_json({ value => $value })))->{value}
+}
+
+## Backtick-quote $value as an identifier.
+fn Clickhouse::quote_ident ($value) {
+    Clickhouse::_decode("quote_identifier", clickhouse__quote_identifier(to_json({ value => $value })))->{value}
+}
+
+## Resolve the base URL these opts connect to.
+fn Clickhouse::build_url (%opts) {
+    val $r = Clickhouse::_req({}, \%opts)
+    Clickhouse::_decode("build_url", clickhouse__build_url(to_json($r)))->{value}
+}
+
+## Decompose $url into scheme/host/port/username/password/database/tls.
+fn Clickhouse::parse_url ($url) {
+    Clickhouse::_decode("parse_url", clickhouse__parse_url(to_json({ url => $url })))
+}
+
+## Replace userinfo in $url with *** for safe logging.
+fn Clickhouse::redact_url ($url) {
+    Clickhouse::_decode("redact_url", clickhouse__redact_url(to_json({ url => $url })))->{value}
+}

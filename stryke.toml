@@ -1,0 +1,48 @@
+[package]
+name = "stryke-clickhouse"
+version = "0.1.0"
+description = "ClickHouse client for stryke. cdylib loaded in-process — HTTP interface (port 8123) over a cached ureq Agent keyed by (base_url, auth, database)."
+authors = ["MenkeTechnologies"]
+license = "MIT"
+repository = "https://github.com/MenkeTechnologies/stryke-clickhouse"
+edition = "2026"
+
+[ffi]
+lib-name = "stryke_clickhouse"
+namespace = "Clickhouse"
+exports = [
+    "clickhouse__version",
+    "clickhouse__ping",
+    "clickhouse__server_version",
+    "clickhouse__query",
+    "clickhouse__query_rows",
+    "clickhouse__query_row",
+    "clickhouse__query_value",
+    "clickhouse__exec",
+    "clickhouse__insert",
+    "clickhouse__databases",
+    "clickhouse__tables",
+    "clickhouse__describe",
+    "clickhouse__count",
+    "clickhouse__table_exists",
+    "clickhouse__settings",
+    "clickhouse__create_database",
+    "clickhouse__drop_database",
+    "clickhouse__create_table",
+    "clickhouse__drop_table",
+    "clickhouse__truncate_table",
+    "clickhouse__optimize",
+    "clickhouse__raw",
+    "clickhouse__escape_string",
+    "clickhouse__quote_identifier",
+    "clickhouse__build_url",
+    "clickhouse__parse_url",
+    "clickhouse__redact_url",
+]
+
+[scripts]
+build = "cargo build --release"
+build-debug = "cargo build"
+clean = "cargo clean"
+test = "s test t/"
+install = "s pkg install -g ."

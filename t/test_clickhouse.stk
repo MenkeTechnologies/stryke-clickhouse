@@ -1,0 +1,68 @@
+## t/test_clickhouse.stk — assertion tests for the stryke `Clickhouse` package.
+##
+## Needs the cdylib loaded (`s pkg install -g .`) so `use Clickhouse` dlopens
+## `lib/libstryke_clickhouse.{dylib,so}`. The data-side asserts also need a
+## live ClickHouse at `$CLICKHOUSE_URL` (or `127.0.0.1:8123`); they short-circuit
+## when ping fails so CI without a server exits clean on the connection-free asserts.
+
+use Clickhouse
+
+# ── permission-free: cdylib reachable ───────────────────────────────
+assert_ok Clickhouse::version(), "Clickhouse::version returns truthy (cdylib loaded)"
+assert_eq Clickhouse::escape("x'y"), "x\\'y", "escape builder"
+
+# ── liveness probe ──────────────────────────────────────────────────
+var %conn
+$conn{url} = $ENV{CLICKHOUSE_URL} if defined $ENV{CLICKHOUSE_URL}
+val $alive = eval { Clickhouse::ping(%conn) }
+
+if ($alive) {
+    val $tbl = "stryke_test_$$"
+
+    # 1. create a MergeTree table
+    Clickhouse::create_table(
+        $tbl,
+        columns  => "id UInt64, name String",
+        order_by => "id",
+        %conn,
+    )
+    assert_ok Clickhouse::table_exists($tbl, %conn), "table created"
+
+    # 2. bulk insert
+    val $n = Clickhouse::insert($tbl, [
+        { id => 1, name => "alpha" },
+        { id => 2, name => "beta"  },
+        { id => 3, name => "gamma" },
+    ], %conn)
+    assert_eq $n, 3, "insert reports 3 rows"
+
+    # 3. count
+    assert_eq Clickhouse::count($tbl, %conn), 3, "count is 3"
+
+    # 4. query_value scalar
+    val $uniq = Clickhouse::query_value("SELECT uniqExact(id) FROM $tbl", %conn)
+    assert_eq $uniq, 3, "uniqExact(id) = 3"
+
+    # 5. query_rows with group by
+    val @rows = Clickhouse::query_rows("SELECT name FROM $tbl ORDER BY id", %conn)
+    assert_eq scalar(@rows), 3, "query_rows returns 3 rows"
+    assert_eq $rows[0]{name}, "alpha", "first row name"
+
+    # 6. query_row
+    val $row = Clickhouse::query_row("SELECT id, name FROM $tbl WHERE id = 2", %conn)
+    assert_eq $row->{name}, "beta", "query_row by id"
+
+    # 7. describe
+    val @cols = Clickhouse::describe($tbl, %conn)
+    assert_eq $cols[0]{name}, "id", "describe first column"
+
+    # 8. table appears in tables list
+    val @tbls = Clickhouse::tables(%conn)
+    assert_ok scalar(@tbls) >= 1, "tables list non-empty"
+
+    # cleanup
+    Clickhouse::drop_table($tbl, %conn)
+    assert_eq Clickhouse::table_exists($tbl, %conn), false, "table dropped"
+}
+
+test_run

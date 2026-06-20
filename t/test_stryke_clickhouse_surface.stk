@@ -1,0 +1,56 @@
+## t/test_stryke_clickhouse_surface.stk — wrapper-completeness + pure-helper pin.
+##
+## Asserts every public `fn Clickhouse::name` in lib/Clickhouse.stk resolves at
+## runtime, then exercises the connection-free helpers. Permission-free — no
+## server, no creds. Private helpers (`_` prefix) are not asserted.
+
+use Clickhouse
+
+# ── wrapper surface ────────────────────────────────────────
+assert_ok exists &Clickhouse::version, "Clickhouse::version exists"
+assert_ok exists &Clickhouse::ping, "Clickhouse::ping exists"
+assert_ok exists &Clickhouse::server_version, "Clickhouse::server_version exists"
+assert_ok exists &Clickhouse::query, "Clickhouse::query exists"
+assert_ok exists &Clickhouse::query_rows, "Clickhouse::query_rows exists"
+assert_ok exists &Clickhouse::query_row, "Clickhouse::query_row exists"
+assert_ok exists &Clickhouse::query_value, "Clickhouse::query_value exists"
+assert_ok exists &Clickhouse::exec, "Clickhouse::exec exists"
+assert_ok exists &Clickhouse::insert, "Clickhouse::insert exists"
+assert_ok exists &Clickhouse::databases, "Clickhouse::databases exists"
+assert_ok exists &Clickhouse::tables, "Clickhouse::tables exists"
+assert_ok exists &Clickhouse::describe, "Clickhouse::describe exists"
+assert_ok exists &Clickhouse::count, "Clickhouse::count exists"
+assert_ok exists &Clickhouse::table_exists, "Clickhouse::table_exists exists"
+assert_ok exists &Clickhouse::settings, "Clickhouse::settings exists"
+assert_ok exists &Clickhouse::create_database, "Clickhouse::create_database exists"
+assert_ok exists &Clickhouse::drop_database, "Clickhouse::drop_database exists"
+assert_ok exists &Clickhouse::create_table, "Clickhouse::create_table exists"
+assert_ok exists &Clickhouse::drop_table, "Clickhouse::drop_table exists"
+assert_ok exists &Clickhouse::truncate_table, "Clickhouse::truncate_table exists"
+assert_ok exists &Clickhouse::optimize, "Clickhouse::optimize exists"
+assert_ok exists &Clickhouse::raw, "Clickhouse::raw exists"
+assert_ok exists &Clickhouse::escape, "Clickhouse::escape exists"
+assert_ok exists &Clickhouse::quote_ident, "Clickhouse::quote_ident exists"
+assert_ok exists &Clickhouse::build_url, "Clickhouse::build_url exists"
+assert_ok exists &Clickhouse::parse_url, "Clickhouse::parse_url exists"
+assert_ok exists &Clickhouse::redact_url, "Clickhouse::redact_url exists"
+
+# ── version (cdylib loaded) ────────────────────────────────
+assert_ok Clickhouse::version(), "Clickhouse::version returns truthy (cdylib loaded)"
+
+# ── pure helpers (no server) ───────────────────────────────
+assert_eq Clickhouse::escape("a'b"), "a\\'b", "escape single quote"
+assert_eq Clickhouse::escape("a\\b"), "a\\\\b", "escape backslash"
+assert_eq Clickhouse::escape("plain"), "plain", "escape leaves plain text"
+assert_eq Clickhouse::quote_ident("col"), "`col`", "quote_ident backticks"
+
+assert_eq Clickhouse::build_url(host => "h", port => 8123), "http://h:8123", "build_url from parts"
+assert_eq Clickhouse::redact_url("https://u:p\@ch:8123"), "https://***\@ch:8123", "redact strips userinfo"
+
+val $pu = Clickhouse::parse_url("https://ch.example.com:8443/metrics")
+assert_eq $pu->{host}, "ch.example.com", "parse_url host"
+assert_eq $pu->{port}, 8443, "parse_url port"
+assert_eq $pu->{database}, "metrics", "parse_url database from path"
+assert_eq $pu->{tls}, true, "parse_url tls"
+
+test_run
