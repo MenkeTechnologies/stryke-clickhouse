@@ -26,6 +26,11 @@
     .example-tbl td { padding: 6px 10px; border: 1px solid var(--border); vertical-align: top; color: var(--text-dim); }
     .example-tbl td:first-child { width: 30%; white-space: nowrap; color: var(--cyan); font-family: 'Share Tech Mono', monospace; }
     .example-tbl td code { color: var(--accent-light); background: var(--bg); padding: 1px 5px; font-size: 12px; }
+    .ref-tbl { width: 100%; border-collapse: collapse; margin: 0.6rem 0; font-size: 12.5px; }
+    .ref-tbl th { background: var(--bg-secondary); color: var(--cyan); font-family: 'Orbitron', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; text-align: left; padding: 6px 10px; border: 1px solid var(--border); }
+    .ref-tbl td { padding: 6px 10px; border: 1px solid var(--border); color: var(--text-dim); vertical-align: top; }
+    .ref-tbl td:first-child { white-space: nowrap; color: var(--cyan); font-family: 'Share Tech Mono', monospace; }
+    .ref-tbl td code { color: var(--accent-light); background: var(--bg); padding: 1px 4px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -97,6 +102,21 @@ val @rows = Clickhouse::query_rows("SELECT kind, count() c FROM events GROUP BY 
           <tr><td>database</td><td><code>default</code> &mdash; sent as <code>?database=</code> on every request</td></tr>
           <tr><td>params</td><td>Extra ClickHouse settings as URL query params</td></tr>
         </table>
+        <p>Connection params can be passed inline per call or kept in a hash and splatted into every call:</p>
+<pre>var %conn
+$conn{host}     = "ch.internal"
+$conn{port}     = 8123
+$conn{tls}      = 0
+$conn{username} = "reader"
+$conn{password} = $ENV{CH_PASS}
+$conn{database} = "analytics"
+
+p Clickhouse::ping(%conn)
+val @rows = Clickhouse::query_rows("SELECT now()", %conn)</pre>
+        <p>When neither <code>url</code> nor <code>host</code> is present, the client falls back to the <code>$CLICKHOUSE_URL</code> environment variable, so a script can run unchanged across hosts:</p>
+<pre>export CLICKHOUSE_URL="https://default:secret@ch.example.com:8443/analytics"
+s run report.stk     # no %conn needed</pre>
+        <p>A <code>ureq::Agent</code> (HTTP keep-alive pool) is cached per <code>(base_url, auth, database)</code> tuple for the life of the stryke process, so repeated calls to the same target reuse the underlying connection. The database rides on the query string as <code>?database=</code>, and credentials travel as HTTP Basic (default user <code>default</code>, empty password).</p>
       </section>
 
       <section class="tutorial-section">
@@ -108,7 +128,133 @@ val @rows = Clickhouse::query_rows("SELECT kind, count() c FROM events GROUP BY 
           <tr><td>DDL</td><td><code>create_database</code>, <code>drop_database</code>, <code>create_table</code>, <code>drop_table</code>, <code>truncate_table</code>, <code>rename_table</code>, <code>add_column</code>, <code>drop_column</code>, <code>optimize</code></td></tr>
           <tr><td>Pure helpers</td><td><code>escape</code>, <code>escape_like</code>, <code>quote_literal</code>, <code>quote_ident</code>, <code>valid_identifier</code>, <code>format_value</code>, <code>format_in_list</code>, <code>format_array</code>, <code>build_url</code>, <code>parse_url</code>, <code>redact_url</code></td></tr>
         </table>
-        <p><code>query</code> returns the full result object; <code>query_rows</code> / <code>query_row</code> / <code>query_value</code> peel off the array / first row / first scalar. <code>exec</code> is for statements that return no rows. The full reference lives in the <a href="https://github.com/MenkeTechnologies/stryke-clickhouse#readme" target="_blank" rel="noopener noreferrer">README</a>.</p>
+        <p>43 functions in the <code>Clickhouse</code> namespace. Every call (except the pure helpers) takes the trailing <code>%opts</code> connection hash. <code>query</code> returns the full result object; <code>query_rows</code> / <code>query_row</code> / <code>query_value</code> peel off the array / first row / first scalar. <code>exec</code> is for statements that return no rows.</p>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Reference &mdash; liveness</h2>
+        <table class="ref-tbl">
+          <thead><tr><th>Function</th><th>Returns / behaviour</th></tr></thead>
+          <tbody>
+            <tr><td>version()</td><td>Package version string (from the cdylib, no server).</td></tr>
+            <tr><td>ping(%opts)</td><td>Connectivity probe (<code>GET /ping</code>) &mdash; <code>1</code> on success, <code>0</code> otherwise.</td></tr>
+            <tr><td>server_version(%opts)</td><td>Server version string (<code>SELECT version()</code>).</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Reference &mdash; query &amp; write</h2>
+        <table class="ref-tbl">
+          <thead><tr><th>Function</th><th>Returns / behaviour</th></tr></thead>
+          <tbody>
+            <tr><td>query($sql, %opts)</td><td>Run a SELECT; returns the full <code>{ meta, data, rows, statistics }</code> object.</td></tr>
+            <tr><td>query_rows($sql, %opts)</td><td>Run a SELECT; returns just the array of row objects.</td></tr>
+            <tr><td>query_row($sql, %opts)</td><td>Run a SELECT; returns the first row object (or undef).</td></tr>
+            <tr><td>query_value($sql, %opts)</td><td>Run a SELECT; returns the first column of the first row (a scalar).</td></tr>
+            <tr><td>exec($sql, %opts)</td><td>Run a no-row statement (CREATE/INSERT/ALTER/DROP/&hellip;). Returns truthy on ok.</td></tr>
+            <tr><td>insert($table, $rows, %opts)</td><td>Bulk insert an arrayref of hashrefs into <code>$table</code> via JSONEachRow. Returns the number of rows sent.</td></tr>
+            <tr><td>delete_where($table, $where, %opts)</td><td>Lightweight delete: <code>DELETE FROM $table WHERE $where</code> (ClickHouse 22.8+).</td></tr>
+            <tr><td>raw($sql, %opts)</td><td>Escape hatch: run arbitrary <code>$sql</code>. <code>json</code> opt (default true) parses a SELECT result; pass <code>json =&gt; 0</code> for a no-row statement.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Reference &mdash; introspection</h2>
+        <table class="ref-tbl">
+          <thead><tr><th>Function</th><th>Returns / behaviour</th></tr></thead>
+          <tbody>
+            <tr><td>databases(%opts)</td><td>Array of database names (<code>system.databases</code>).</td></tr>
+            <tr><td>tables(%opts)</td><td>Array of table names in <code>%opts{database}</code> (default <code>default</code>).</td></tr>
+            <tr><td>describe($table, %opts)</td><td><code>DESCRIBE TABLE $table</code> &mdash; array of column descriptors.</td></tr>
+            <tr><td>columns($table, %opts)</td><td>Per-column metadata from <code>system.columns</code>: name, type, default kind/expression, compressed/uncompressed bytes, comment.</td></tr>
+            <tr><td>count($table, %opts)</td><td>Row count of <code>$table</code>.</td></tr>
+            <tr><td>table_exists($table, %opts)</td><td>True when <code>$table</code> exists in <code>%opts{database}</code>.</td></tr>
+            <tr><td>database_exists($name, %opts)</td><td>True when database <code>$name</code> exists (<code>system.databases</code>).</td></tr>
+            <tr><td>settings(%opts)</td><td>All server settings (<code>system.settings</code>): name, value, changed, description.</td></tr>
+            <tr><td>parts($table, %opts)</td><td>Active parts from <code>system.parts</code>: partition, rows, on-disk + compressed/uncompressed bytes, modification time.</td></tr>
+            <tr><td>disk_usage($table, %opts)</td><td>Aggregate storage of active parts: rows, on-disk + compressed + uncompressed bytes, and compression ratio. One hashref.</td></tr>
+            <tr><td>mutations($table, %opts)</td><td>Pending/recent mutations from <code>system.mutations</code>: mutation_id, command, create_time, parts_to_do, is_done, latest_fail_reason.</td></tr>
+            <tr><td>processes(%opts)</td><td>Currently executing queries from <code>system.processes</code>: query_id, user, query, elapsed, read_rows, read_bytes, memory_usage.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Reference &mdash; DDL</h2>
+        <table class="ref-tbl">
+          <thead><tr><th>Function</th><th>Emitted statement</th></tr></thead>
+          <tbody>
+            <tr><td>create_database($name, %opts)</td><td><code>CREATE DATABASE IF NOT EXISTS $name</code>.</td></tr>
+            <tr><td>drop_database($name, %opts)</td><td><code>DROP DATABASE IF EXISTS $name</code>.</td></tr>
+            <tr><td>create_table($name, %opts)</td><td>Either <code>%opts{sql}</code> (full CREATE) or <code>$name</code> + <code>columns</code> (&quot;col Type, &hellip;&quot;) + <code>engine</code> (default <code>MergeTree</code>) + <code>order_by</code>.</td></tr>
+            <tr><td>drop_table($table, %opts)</td><td><code>DROP TABLE IF EXISTS $table</code>.</td></tr>
+            <tr><td>truncate_table($table, %opts)</td><td><code>TRUNCATE TABLE IF EXISTS $table</code>.</td></tr>
+            <tr><td>rename_table($from, $to, %opts)</td><td><code>RENAME TABLE $from TO $to</code>.</td></tr>
+            <tr><td>add_column($table, $name, $type, %opts)</td><td><code>ALTER TABLE $table ADD COLUMN IF NOT EXISTS $name $type</code>; <code>%opts{default}</code> appends a <code>DEFAULT</code> expression.</td></tr>
+            <tr><td>drop_column($table, $name, %opts)</td><td><code>ALTER TABLE $table DROP COLUMN IF EXISTS $name</code>.</td></tr>
+            <tr><td>optimize($table, %opts)</td><td><code>OPTIMIZE TABLE $table</code>; <code>%opts{final}</code> appends <code>FINAL</code>.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Reference &mdash; pure helpers</h2>
+        <p>These take no connection and are unit-tested in-crate, so they validate in CI with no server present. Use them to build SQL safely.</p>
+        <table class="ref-tbl">
+          <thead><tr><th>Function</th><th>Behaviour</th></tr></thead>
+          <tbody>
+            <tr><td>escape($value)</td><td>Escape <code>$value</code> for a single-quoted SQL literal (backslash + single-quote escaped).</td></tr>
+            <tr><td>escape_like($value)</td><td>Escape <code>\</code>, <code>%</code>, <code>_</code> so <code>$value</code> matches literally inside a <code>LIKE</code> pattern.</td></tr>
+            <tr><td>quote_literal($value)</td><td>Wrap <code>$value</code> as a single-quoted, backslash-escaped string literal.</td></tr>
+            <tr><td>quote_ident($value)</td><td>Backtick-quote <code>$value</code> as an identifier (embedded backticks escaped).</td></tr>
+            <tr><td>valid_identifier($value)</td><td>True when <code>$value</code> is a valid unquoted identifier (<code>[A-Za-z_][A-Za-z0-9_]*</code>).</td></tr>
+            <tr><td>format_value($value)</td><td>Format a value as a ClickHouse literal: string&rarr;<code>'&hellip;'</code>, number&rarr;as-is, bool&rarr;<code>true</code>/<code>false</code>, null&rarr;<code>NULL</code>, array&rarr;<code>[&hellip;]</code>.</td></tr>
+            <tr><td>format_in_list($values)</td><td>Render an arrayref into an <code>IN (&hellip;)</code> list (empty&rarr;<code>(NULL)</code>, matches nothing).</td></tr>
+            <tr><td>format_array($values)</td><td>Render an arrayref into a ClickHouse array literal <code>[&hellip;]</code>.</td></tr>
+            <tr><td>build_url(%opts)</td><td>Resolve the base URL these opts connect to.</td></tr>
+            <tr><td>parse_url($url)</td><td>Decompose <code>$url</code> into scheme/host/port/username/password/database/tls.</td></tr>
+            <tr><td>redact_url($url)</td><td>Replace userinfo in <code>$url</code> with <code>***</code> for safe logging.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Examples</h2>
+        <p>Safe parameterization with the escape helper:</p>
+<pre>val $name = Clickhouse::escape($user_input)
+val @hits = Clickhouse::query_rows("SELECT * FROM events WHERE kind = '$name'", %conn)</pre>
+        <p>Build an <code>IN (&hellip;)</code> list and a <code>LIKE</code> pattern without hand-escaping:</p>
+<pre>val $ids = Clickhouse::format_in_list([1, 2, 3])          # (1, 2, 3)
+val @rows = Clickhouse::query_rows("SELECT * FROM events WHERE user IN $ids", %conn)
+
+val $needle = Clickhouse::escape_like($q)
+val @found = Clickhouse::query_rows("SELECT * FROM events WHERE kind LIKE '%$needle%'", %conn)</pre>
+        <p>Introspect storage and schema:</p>
+<pre>p Clickhouse::table_exists("events", %conn)
+val @cols = Clickhouse::columns("events", %conn)
+val $usage = Clickhouse::disk_usage("events", %conn)
+p $usage-&gt;{compression_ratio}
+
+for val $proc (Clickhouse::processes(%conn)) {
+    p "$proc-&gt;{query_id}: $proc-&gt;{elapsed}s"
+}</pre>
+        <p>DDL and lightweight delete:</p>
+<pre>Clickhouse::add_column("events", "session", "String", default =&gt; "''", %conn)
+Clickhouse::optimize("events", final =&gt; 1, %conn)
+Clickhouse::delete_where("events", "kind = 'spam'", %conn)
+Clickhouse::rename_table("events", "events_old", %conn)</pre>
+        <p>Redact a URL before logging it:</p>
+<pre>p Clickhouse::redact_url("https://user:pw@ch.example.com:8443")   # https://***@ch.example.com:8443</pre>
+      </section>
+
+      <section class="tutorial-section">
+        <h2>Build &amp; test</h2>
+<pre>make debug       # cargo build
+make test        # cargo test, then `s test t/`
+make install     # s pkg install -g .</pre>
+        <p><code>cargo test</code> runs the in-crate unit tests (string/identifier escaping, URL parse/redact, connection key, result extraction) with no server required. <code>t/test_stryke_clickhouse_surface.stk</code> pins the wrapper surface and exercises the pure helpers; <code>t/test_clickhouse.stk</code> runs end-to-end DDL + insert + query against a live server (needs <code>$CLICKHOUSE_URL</code> or <code>127.0.0.1:8123</code>) and short-circuits when none answers.</p>
       </section>
 
       <section class="tutorial-section">
