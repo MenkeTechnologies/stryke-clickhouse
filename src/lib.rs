@@ -603,6 +603,15 @@ pub extern "C" fn clickhouse__valid_identifier(args: *const c_char) -> *const c_
     })
 }
 
+/// Escape a string to match literally inside a `LIKE` pattern (`\`, `%`, `_`).
+#[no_mangle]
+pub extern "C" fn clickhouse__escape_like(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let s = str_field(&v, "value")?;
+        Ok(json!({ "value": escape_like(s) }))
+    })
+}
+
 // ── shared pure logic (unit-tested) ─────────────────────────────────────────
 
 fn escape_string(s: &str) -> String {
@@ -672,6 +681,21 @@ fn valid_identifier(s: &str) -> bool {
     let mut chars = s.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Escape a string to match literally inside a ClickHouse `LIKE` pattern: the
+/// wildcards `%`/`_` and the escape char `\` are each backslash-escaped. The
+/// result is the pattern body — wrap it with surrounding `%` and quote_literal,
+/// e.g. `column LIKE '%' || quote_literal(escape_like(s)) || '%'`.
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn parse_url(url: &str) -> Value {
@@ -825,5 +849,13 @@ mod tests {
         assert!(valid_identifier("Col"));
         assert!(!valid_identifier("1col"));
         assert!(!valid_identifier("a b"));
+    }
+
+    #[test]
+    fn escape_like_escapes_wildcards() {
+        assert_eq!(escape_like("100%"), "100\\%");
+        assert_eq!(escape_like("a_b"), "a\\_b");
+        assert_eq!(escape_like("c\\d"), "c\\\\d");
+        assert_eq!(escape_like("plain"), "plain");
     }
 }

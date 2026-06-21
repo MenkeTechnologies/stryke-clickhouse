@@ -116,7 +116,7 @@ for the life of the stryke process.
 | Query         | `query`, `query_rows`, `query_row`, `query_value`, `exec`, `insert`, `raw`             |
 | Introspection | `databases`, `tables`, `describe`, `count`, `table_exists`, `settings`                 |
 | DDL           | `create_database`, `drop_database`, `create_table`, `drop_table`, `truncate_table`, `optimize` |
-| Pure helpers  | `escape`, `quote_literal`, `quote_ident`, `valid_identifier`, `format_value`, `format_in_list`, `format_array`, `build_url`, `parse_url`, `redact_url` |
+| Pure helpers  | `escape`, `escape_like`, `quote_literal`, `quote_ident`, `valid_identifier`, `format_value`, `format_in_list`, `format_array`, `build_url`, `parse_url`, `redact_url` |
 
 `query` returns the full result object; `query_rows` / `query_row` /
 `query_value` peel off the array / first row / first scalar. `exec` is for

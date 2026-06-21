@@ -242,3 +242,8 @@ fn Clickhouse::format_array ($values) {
 fn Clickhouse::valid_identifier ($value) {
     Clickhouse::_decode("valid_identifier", clickhouse__valid_identifier(to_json({ value => $value })))->{valid}
 }
+
+## Escape $value to match literally inside a `LIKE` pattern (`\`, `%`, `_`).
+fn Clickhouse::escape_like ($value) {
+    Clickhouse::_decode("escape_like", clickhouse__escape_like(to_json({ value => $value })))->{value}
+}

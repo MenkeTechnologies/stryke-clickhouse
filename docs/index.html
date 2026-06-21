@@ -106,7 +106,7 @@ val @rows = Clickhouse::query_rows("SELECT kind, count() c FROM events GROUP BY 
           <tr><td>Query</td><td><code>query</code>, <code>query_rows</code>, <code>query_row</code>, <code>query_value</code>, <code>exec</code>, <code>insert</code>, <code>raw</code></td></tr>
           <tr><td>Introspection</td><td><code>databases</code>, <code>tables</code>, <code>describe</code>, <code>count</code>, <code>table_exists</code>, <code>settings</code></td></tr>
           <tr><td>DDL</td><td><code>create_database</code>, <code>drop_database</code>, <code>create_table</code>, <code>drop_table</code>, <code>truncate_table</code>, <code>optimize</code></td></tr>
-          <tr><td>Pure helpers</td><td><code>escape</code>, <code>quote_literal</code>, <code>quote_ident</code>, <code>valid_identifier</code>, <code>format_value</code>, <code>format_in_list</code>, <code>format_array</code>, <code>build_url</code>, <code>parse_url</code>, <code>redact_url</code></td></tr>
+          <tr><td>Pure helpers</td><td><code>escape</code>, <code>escape_like</code>, <code>quote_literal</code>, <code>quote_ident</code>, <code>valid_identifier</code>, <code>format_value</code>, <code>format_in_list</code>, <code>format_array</code>, <code>build_url</code>, <code>parse_url</code>, <code>redact_url</code></td></tr>
         </table>
         <p><code>query</code> returns the full result object; <code>query_rows</code> / <code>query_row</code> / <code>query_value</code> peel off the array / first row / first scalar. <code>exec</code> is for statements that return no rows. The full reference lives in the <a href="https://github.com/MenkeTechnologies/stryke-clickhouse#readme" target="_blank" rel="noopener noreferrer">README</a>.</p>
       </section>
