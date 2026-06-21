@@ -46,6 +46,14 @@ exports = [
     "clickhouse__format_array",
     "clickhouse__valid_identifier",
     "clickhouse__escape_like",
+    "clickhouse__add_column",
+    "clickhouse__columns",
+    "clickhouse__database_exists",
+    "clickhouse__delete_where",
+    "clickhouse__disk_usage",
+    "clickhouse__drop_column",
+    "clickhouse__mutations",
+    "clickhouse__processes",
 ]
 
 [scripts]
