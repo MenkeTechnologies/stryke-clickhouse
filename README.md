@@ -113,9 +113,9 @@ for the life of the stryke process.
 | Group         | Functions                                                                             |
 | ------------- | ------------------------------------------------------------------------------------- |
 | Liveness      | `version`, `ping`, `server_version`                                                    |
-| Query         | `query`, `query_rows`, `query_row`, `query_value`, `exec`, `insert`, `raw`             |
-| Introspection | `databases`, `tables`, `describe`, `count`, `table_exists`, `settings`, `parts`        |
-| DDL           | `create_database`, `drop_database`, `create_table`, `drop_table`, `truncate_table`, `rename_table`, `optimize` |
+| Query         | `query`, `query_rows`, `query_row`, `query_value`, `exec`, `insert`, `delete_where`, `raw` |
+| Introspection | `databases`, `tables`, `describe`, `columns`, `count`, `table_exists`, `database_exists`, `settings`, `parts`, `disk_usage`, `mutations`, `processes` |
+| DDL           | `create_database`, `drop_database`, `create_table`, `drop_table`, `truncate_table`, `rename_table`, `add_column`, `drop_column`, `optimize` |
 | Pure helpers  | `escape`, `escape_like`, `quote_literal`, `quote_ident`, `valid_identifier`, `format_value`, `format_in_list`, `format_array`, `build_url`, `parse_url`, `redact_url` |
 
 `query` returns the full result object; `query_rows` / `query_row` /

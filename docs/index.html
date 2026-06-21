@@ -103,9 +103,9 @@ val @rows = Clickhouse::query_rows("SELECT kind, count() c FROM events GROUP BY 
         <h2>API surface</h2>
         <table class="example-tbl">
           <tr><td>Liveness</td><td><code>version</code>, <code>ping</code>, <code>server_version</code></td></tr>
-          <tr><td>Query</td><td><code>query</code>, <code>query_rows</code>, <code>query_row</code>, <code>query_value</code>, <code>exec</code>, <code>insert</code>, <code>raw</code></td></tr>
-          <tr><td>Introspection</td><td><code>databases</code>, <code>tables</code>, <code>describe</code>, <code>count</code>, <code>table_exists</code>, <code>settings</code>, <code>parts</code></td></tr>
-          <tr><td>DDL</td><td><code>create_database</code>, <code>drop_database</code>, <code>create_table</code>, <code>drop_table</code>, <code>truncate_table</code>, <code>rename_table</code>, <code>optimize</code></td></tr>
+          <tr><td>Query</td><td><code>query</code>, <code>query_rows</code>, <code>query_row</code>, <code>query_value</code>, <code>exec</code>, <code>insert</code>, <code>delete_where</code>, <code>raw</code></td></tr>
+          <tr><td>Introspection</td><td><code>databases</code>, <code>tables</code>, <code>describe</code>, <code>columns</code>, <code>count</code>, <code>table_exists</code>, <code>database_exists</code>, <code>settings</code>, <code>parts</code>, <code>disk_usage</code>, <code>mutations</code>, <code>processes</code></td></tr>
+          <tr><td>DDL</td><td><code>create_database</code>, <code>drop_database</code>, <code>create_table</code>, <code>drop_table</code>, <code>truncate_table</code>, <code>rename_table</code>, <code>add_column</code>, <code>drop_column</code>, <code>optimize</code></td></tr>
           <tr><td>Pure helpers</td><td><code>escape</code>, <code>escape_like</code>, <code>quote_literal</code>, <code>quote_ident</code>, <code>valid_identifier</code>, <code>format_value</code>, <code>format_in_list</code>, <code>format_array</code>, <code>build_url</code>, <code>parse_url</code>, <code>redact_url</code></td></tr>
         </table>
         <p><code>query</code> returns the full result object; <code>query_rows</code> / <code>query_row</code> / <code>query_value</code> peel off the array / first row / first scalar. <code>exec</code> is for statements that return no rows. The full reference lives in the <a href="https://github.com/MenkeTechnologies/stryke-clickhouse#readme" target="_blank" rel="noopener noreferrer">README</a>.</p>

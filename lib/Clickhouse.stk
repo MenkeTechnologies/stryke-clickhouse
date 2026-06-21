@@ -133,6 +133,40 @@ fn Clickhouse::settings (%opts) {
     @{ Clickhouse::_decode("settings", clickhouse__settings(to_json($r)))->{value} }
 }
 
+## True when database $name exists (`system.databases`).
+fn Clickhouse::database_exists ($name, %opts) {
+    val $r = Clickhouse::_req({ name => $name }, \%opts)
+    Clickhouse::_decode("database_exists", clickhouse__database_exists(to_json($r)))->{value}
+}
+
+## Per-column metadata of $table from system.columns (name, type, default
+## kind/expression, compressed/uncompressed bytes, comment). %opts{database}.
+fn Clickhouse::columns ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table, database => $opts{database} }, \%opts)
+    @{ Clickhouse::_decode("columns", clickhouse__columns(to_json($r)))->{value} }
+}
+
+## Aggregate storage of $table's active parts: rows, on-disk + compressed +
+## uncompressed bytes, and compression ratio. Returns one hashref. %opts{database}.
+fn Clickhouse::disk_usage ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table, database => $opts{database} }, \%opts)
+    Clickhouse::_decode("disk_usage", clickhouse__disk_usage(to_json($r)))->{value}
+}
+
+## Pending/recent mutations of $table from system.mutations (mutation_id,
+## command, create_time, parts_to_do, is_done, latest_fail_reason). %opts{database}.
+fn Clickhouse::mutations ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table, database => $opts{database} }, \%opts)
+    @{ Clickhouse::_decode("mutations", clickhouse__mutations(to_json($r)))->{value} }
+}
+
+## Currently executing queries from system.processes (query_id, user, query,
+## elapsed, read_rows, read_bytes, memory_usage).
+fn Clickhouse::processes (%opts) {
+    val $r = Clickhouse::_req({}, \%opts)
+    @{ Clickhouse::_decode("processes", clickhouse__processes(to_json($r)))->{value} }
+}
+
 # ── DDL helpers ───────────────────────────────────────────────────────
 
 ## CREATE DATABASE IF NOT EXISTS $name.
@@ -185,6 +219,28 @@ fn Clickhouse::optimize ($table, %opts) {
 fn Clickhouse::rename_table ($from, $to, %opts) {
     val $r = Clickhouse::_req({ from => $from, to => $to }, \%opts)
     Clickhouse::_decode("rename_table", clickhouse__rename_table(to_json($r)))->{ok}
+}
+
+## ALTER TABLE $table ADD COLUMN IF NOT EXISTS $name $type. %opts{default}
+## appends a DEFAULT expression.
+fn Clickhouse::add_column ($table, $name, $type, %opts) {
+    val $r = Clickhouse::_req(
+        { table => $table, name => $name, type => $type, default => $opts{default} },
+        \%opts
+    )
+    Clickhouse::_decode("add_column", clickhouse__add_column(to_json($r)))->{ok}
+}
+
+## ALTER TABLE $table DROP COLUMN IF EXISTS $name.
+fn Clickhouse::drop_column ($table, $name, %opts) {
+    val $r = Clickhouse::_req({ table => $table, name => $name }, \%opts)
+    Clickhouse::_decode("drop_column", clickhouse__drop_column(to_json($r)))->{ok}
+}
+
+## Lightweight delete: DELETE FROM $table WHERE $where (ClickHouse 22.8+).
+fn Clickhouse::delete_where ($table, $where, %opts) {
+    val $r = Clickhouse::_req({ table => $table, where => $where }, \%opts)
+    Clickhouse::_decode("delete_where", clickhouse__delete_where(to_json($r)))->{ok}
 }
 
 ## Active parts of $table from system.parts (partition, rows, on-disk +

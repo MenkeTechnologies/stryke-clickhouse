@@ -60,6 +60,39 @@ if ($alive) {
     val @tbls = Clickhouse::tables(%conn)
     assert_ok scalar(@tbls) >= 1, "tables list non-empty"
 
+    # 9. database_exists for the default database
+    assert_ok Clickhouse::database_exists("default", %conn), "default database exists"
+    assert_eq Clickhouse::database_exists("no_such_db_$$", %conn), false, "missing database absent"
+
+    # 10. columns metadata richer than describe
+    val @meta = Clickhouse::columns($tbl, %conn)
+    assert_eq scalar(@meta), 2, "columns returns 2 columns"
+    assert_eq $meta[0]{name}, "id", "columns first name"
+    assert_eq $meta[0]{type}, "UInt64", "columns first type"
+
+    # 11. disk_usage aggregate over active parts
+    val $du = Clickhouse::disk_usage($tbl, %conn)
+    assert_eq $du->{rows}, 3, "disk_usage rows = 3"
+
+    # 12. add_column then verify, then drop_column
+    Clickhouse::add_column($tbl, "score", "Float64", default => "0", %conn)
+    val @meta2 = Clickhouse::columns($tbl, %conn)
+    assert_eq scalar(@meta2), 3, "add_column added a column"
+    Clickhouse::drop_column($tbl, "score", %conn)
+    val @meta3 = Clickhouse::columns($tbl, %conn)
+    assert_eq scalar(@meta3), 2, "drop_column removed the column"
+
+    # 13. lightweight delete
+    Clickhouse::delete_where($tbl, "id = 2", %conn)
+    Clickhouse::optimize($tbl, final => true, %conn)
+    assert_eq Clickhouse::count($tbl, %conn), 2, "delete_where removed one row"
+
+    # 14. mutations + processes return arrays (no rows asserted, just shape)
+    val @muts = Clickhouse::mutations($tbl, %conn)
+    assert_ok ref(\@muts) eq "ARRAY", "mutations returns a list"
+    val @procs = Clickhouse::processes(%conn)
+    assert_ok ref(\@procs) eq "ARRAY", "processes returns a list"
+
     # cleanup
     Clickhouse::drop_table($tbl, %conn)
     assert_eq Clickhouse::table_exists($tbl, %conn), false, "table dropped"

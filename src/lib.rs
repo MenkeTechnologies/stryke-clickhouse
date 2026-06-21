@@ -424,6 +424,104 @@ pub extern "C" fn clickhouse__settings(args: *const c_char) -> *const c_char {
     })
 }
 
+/// True when a database exists in `system.databases`. Parity with `table_exists`.
+#[no_mangle]
+pub extern "C" fn clickhouse__database_exists(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let name = str_field(&v, "name")?;
+        let sql = format!(
+            "SELECT count() AS c FROM system.databases WHERE name = '{}'",
+            escape_string(name)
+        );
+        let r = query_json(&v, &sql)?;
+        let exists = data_rows(&r)
+            .get(0)
+            .and_then(|row| row.get("c"))
+            .map(|c| c.as_i64().unwrap_or(0) > 0 || c.as_str() == Some("1"))
+            .unwrap_or(false);
+        Ok(json!({ "value": exists }))
+    })
+}
+
+/// Per-column metadata from `system.columns` for a table: name, type, default
+/// kind/expression, on-disk compressed/uncompressed bytes, comment. Richer than
+/// `DESCRIBE`, which has no storage figures.
+#[no_mangle]
+pub extern "C" fn clickhouse__columns(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let table = str_field(&v, "table")?;
+        let db = opt_str(&v, "database").unwrap_or("default");
+        let sql = format!(
+            "SELECT name, type, default_kind, default_expression, \
+             data_compressed_bytes, data_uncompressed_bytes, comment \
+             FROM system.columns WHERE database = '{}' AND table = '{}' \
+             ORDER BY position",
+            escape_string(db),
+            escape_string(table)
+        );
+        let r = query_json(&v, &sql)?;
+        Ok(json!({ "value": data_rows(&r) }))
+    })
+}
+
+/// Aggregate storage of a table's active parts: total rows, on-disk bytes,
+/// compressed/uncompressed bytes, and compression ratio. Returns a single
+/// object (zeros when the table has no parts).
+#[no_mangle]
+pub extern "C" fn clickhouse__disk_usage(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let table = str_field(&v, "table")?;
+        let db = opt_str(&v, "database").unwrap_or("default");
+        let sql = format!(
+            "SELECT sum(rows) AS rows, sum(bytes_on_disk) AS bytes_on_disk, \
+             sum(data_compressed_bytes) AS compressed, \
+             sum(data_uncompressed_bytes) AS uncompressed, \
+             round(sum(data_uncompressed_bytes) / greatest(sum(data_compressed_bytes), 1), 3) AS ratio \
+             FROM system.parts WHERE database = '{}' AND table = '{}' AND active",
+            escape_string(db),
+            escape_string(table)
+        );
+        let r = query_json(&v, &sql)?;
+        let row = data_rows(&r).get(0).cloned().unwrap_or(json!({}));
+        Ok(json!({ "value": row }))
+    })
+}
+
+/// Pending and recent mutations for a table from `system.mutations`:
+/// mutation_id, command, create_time, parts_to_do, is_done, latest_fail_reason.
+/// Tracks ALTER UPDATE/DELETE progress and stalls.
+#[no_mangle]
+pub extern "C" fn clickhouse__mutations(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let table = str_field(&v, "table")?;
+        let db = opt_str(&v, "database").unwrap_or("default");
+        let sql = format!(
+            "SELECT mutation_id, command, create_time, parts_to_do, is_done, \
+             latest_fail_reason \
+             FROM system.mutations WHERE database = '{}' AND table = '{}' \
+             ORDER BY create_time DESC",
+            escape_string(db),
+            escape_string(table)
+        );
+        let r = query_json(&v, &sql)?;
+        Ok(json!({ "value": data_rows(&r) }))
+    })
+}
+
+/// Currently executing queries from `system.processes`: query_id, user, the
+/// SQL, elapsed seconds, rows/bytes read, and memory usage.
+#[no_mangle]
+pub extern "C" fn clickhouse__processes(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let r = query_json(
+            &v,
+            "SELECT query_id, user, query, elapsed, read_rows, read_bytes, \
+             memory_usage FROM system.processes ORDER BY elapsed DESC",
+        )?;
+        Ok(json!({ "value": data_rows(&r) }))
+    })
+}
+
 // ── DDL helpers ─────────────────────────────────────────────────────────────
 
 #[no_mangle]
@@ -498,6 +596,49 @@ pub extern "C" fn clickhouse__rename_table(args: *const c_char) -> *const c_char
         let from = str_field(&v, "from")?;
         let to = str_field(&v, "to")?;
         exec_sql(&v, &format!("RENAME TABLE {} TO {}", from, to))
+    })
+}
+
+/// Add a column: `ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <name> <type>`,
+/// with an optional `default` expression appended as `DEFAULT <expr>`.
+#[no_mangle]
+pub extern "C" fn clickhouse__add_column(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let table = str_field(&v, "table")?;
+        let name = str_field(&v, "name")?;
+        let col_type = str_field(&v, "type")?;
+        let mut sql = format!(
+            "ALTER TABLE {} ADD COLUMN IF NOT EXISTS {} {}",
+            table, name, col_type
+        );
+        if let Some(def) = opt_str(&v, "default") {
+            sql.push_str(&format!(" DEFAULT {}", def));
+        }
+        exec_sql(&v, &sql)
+    })
+}
+
+/// Drop a column: `ALTER TABLE <table> DROP COLUMN IF EXISTS <name>`.
+#[no_mangle]
+pub extern "C" fn clickhouse__drop_column(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let table = str_field(&v, "table")?;
+        let name = str_field(&v, "name")?;
+        exec_sql(
+            &v,
+            &format!("ALTER TABLE {} DROP COLUMN IF EXISTS {}", table, name),
+        )
+    })
+}
+
+/// Lightweight delete: `DELETE FROM <table> WHERE <where>` (ClickHouse 22.8+,
+/// marks rows via the hidden `_row_exists` column instead of rewriting parts).
+#[no_mangle]
+pub extern "C" fn clickhouse__delete_where(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let table = str_field(&v, "table")?;
+        let cond = str_field(&v, "where")?;
+        exec_sql(&v, &format!("DELETE FROM {} WHERE {}", table, cond))
     })
 }
 
