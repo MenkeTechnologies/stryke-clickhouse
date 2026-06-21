@@ -215,3 +215,30 @@ fn Clickhouse::parse_url ($url) {
 fn Clickhouse::redact_url ($url) {
     Clickhouse::_decode("redact_url", clickhouse__redact_url(to_json({ url => $url })))->{value}
 }
+
+## Wrap $value as a single-quoted ClickHouse string literal (backslash-escaped).
+fn Clickhouse::quote_literal ($value) {
+    Clickhouse::_decode("quote_literal", clickhouse__quote_literal(to_json({ value => $value })))->{value}
+}
+
+## Format a $value as a ClickHouse literal (string/number/bool/null/array).
+fn Clickhouse::format_value ($value) {
+    Clickhouse::_decode("format_value", clickhouse__format_value(to_json({ value => $value })))->{value}
+}
+
+## Render an arrayref of $values into an `IN (...)` list.
+fn Clickhouse::format_in_list ($values) {
+    val $list = ref($values) eq "ARRAY" ? $values : [$values]
+    Clickhouse::_decode("format_in_list", clickhouse__format_in_list(to_json({ values => $list })))->{value}
+}
+
+## Render an arrayref of $values into a ClickHouse array literal `[...]`.
+fn Clickhouse::format_array ($values) {
+    val $list = ref($values) eq "ARRAY" ? $values : [$values]
+    Clickhouse::_decode("format_array", clickhouse__format_array(to_json({ values => $list })))->{value}
+}
+
+## True when $value is a valid unquoted ClickHouse identifier.
+fn Clickhouse::valid_identifier ($value) {
+    Clickhouse::_decode("valid_identifier", clickhouse__valid_identifier(to_json({ value => $value })))->{valid}
+}

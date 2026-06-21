@@ -552,6 +552,57 @@ pub extern "C" fn clickhouse__redact_url(args: *const c_char) -> *const c_char {
     })
 }
 
+/// Wrap a string as a single-quoted ClickHouse string literal.
+#[no_mangle]
+pub extern "C" fn clickhouse__quote_literal(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let s = str_field(&v, "value")?;
+        Ok(json!({ "value": quote_literal(s) }))
+    })
+}
+
+/// Format a JSON value as a ClickHouse literal (string/number/bool/null/array).
+#[no_mangle]
+pub extern "C" fn clickhouse__format_value(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let val = v.get("value").ok_or_else(|| anyhow!("missing value"))?;
+        Ok(json!({ "value": format_value(val) }))
+    })
+}
+
+/// Render an array of values into an `IN (...)` list.
+#[no_mangle]
+pub extern "C" fn clickhouse__format_in_list(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let vals = v
+            .get("values")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| anyhow!("missing values array"))?;
+        Ok(json!({ "value": format_in_list(vals) }))
+    })
+}
+
+/// Render an array of values into a ClickHouse array literal `[...]`.
+#[no_mangle]
+pub extern "C" fn clickhouse__format_array(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let vals = v
+            .get("values")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| anyhow!("missing values array"))?;
+        Ok(json!({ "value": format_array(vals) }))
+    })
+}
+
+/// True when a string is a valid unquoted ClickHouse identifier.
+#[no_mangle]
+pub extern "C" fn clickhouse__valid_identifier(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let s = str_field(&v, "value")?;
+        Ok(json!({ "valid": valid_identifier(s) }))
+    })
+}
+
 // ── shared pure logic (unit-tested) ─────────────────────────────────────────
 
 fn escape_string(s: &str) -> String {
@@ -577,6 +628,50 @@ fn quote_identifier(s: &str) -> String {
     }
     out.push('`');
     out
+}
+
+/// Wrap a string as a single-quoted ClickHouse string literal (backslash-escaped).
+fn quote_literal(s: &str) -> String {
+    format!("'{}'", escape_string(s))
+}
+
+/// Format a JSON value as a ClickHouse literal: string→`'...'`, number→as-is,
+/// bool→`true`/`false`, null→`NULL`, array→`[...]`.
+fn format_value(v: &Value) -> String {
+    match v {
+        Value::Null => "NULL".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => quote_literal(s),
+        Value::Array(a) => format_array(a),
+        Value::Object(_) => quote_literal(&v.to_string()),
+    }
+}
+
+/// Render values into an `IN (...)` list. Empty → `(NULL)` (matches nothing).
+fn format_in_list(vals: &[Value]) -> String {
+    if vals.is_empty() {
+        return "(NULL)".to_string();
+    }
+    format!(
+        "({})",
+        vals.iter().map(format_value).collect::<Vec<_>>().join(", ")
+    )
+}
+
+/// Render values into a ClickHouse array literal `[...]`.
+fn format_array(vals: &[Value]) -> String {
+    format!(
+        "[{}]",
+        vals.iter().map(format_value).collect::<Vec<_>>().join(", ")
+    )
+}
+
+/// A ClickHouse identifier is safe unquoted when it matches `[A-Za-z_][A-Za-z0-9_]*`.
+fn valid_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn parse_url(url: &str) -> Value {
@@ -699,5 +794,36 @@ mod tests {
         let r = json!({"meta": [], "data": [{"x": 1}, {"x": 2}], "rows": 2});
         assert_eq!(data_rows(&r), json!([{"x": 1}, {"x": 2}]));
         assert_eq!(data_rows(&json!({})), json!([]));
+    }
+
+    #[test]
+    fn quote_literal_backslash_escapes() {
+        assert_eq!(quote_literal("a'b"), "'a\\'b'");
+        assert_eq!(quote_literal("c\\d"), "'c\\\\d'");
+        assert_eq!(quote_literal("plain"), "'plain'");
+    }
+
+    #[test]
+    fn format_value_by_type() {
+        assert_eq!(format_value(&json!(7)), "7");
+        assert_eq!(format_value(&json!(true)), "true");
+        assert_eq!(format_value(&Value::Null), "NULL");
+        assert_eq!(format_value(&json!("a'b")), "'a\\'b'");
+        assert_eq!(format_value(&json!([1, "x"])), "[1, 'x']");
+    }
+
+    #[test]
+    fn format_in_list_and_array() {
+        assert_eq!(format_in_list(&[json!(1), json!("a")]), "(1, 'a')");
+        assert_eq!(format_in_list(&[]), "(NULL)");
+        assert_eq!(format_array(&[json!(1), json!(2)]), "[1, 2]");
+    }
+
+    #[test]
+    fn valid_identifier_allows_leading_underscore() {
+        assert!(valid_identifier("_col1"));
+        assert!(valid_identifier("Col"));
+        assert!(!valid_identifier("1col"));
+        assert!(!valid_identifier("a b"));
     }
 }

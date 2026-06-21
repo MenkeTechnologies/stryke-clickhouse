@@ -1,6 +1,6 @@
 [package]
 name = "stryke-clickhouse"
-version = "0.1.0"
+version = "0.2.0"
 description = "ClickHouse client for stryke. cdylib loaded in-process — HTTP interface (port 8123) over a cached ureq Agent keyed by (base_url, auth, database)."
 authors = ["MenkeTechnologies"]
 license = "MIT"
@@ -38,6 +38,11 @@ exports = [
     "clickhouse__build_url",
     "clickhouse__parse_url",
     "clickhouse__redact_url",
+    "clickhouse__quote_literal",
+    "clickhouse__format_value",
+    "clickhouse__format_in_list",
+    "clickhouse__format_array",
+    "clickhouse__valid_identifier",
 ]
 
 [scripts]
