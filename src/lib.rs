@@ -491,6 +491,37 @@ pub extern "C" fn clickhouse__optimize(args: *const c_char) -> *const c_char {
     })
 }
 
+/// Rename a table: `RENAME TABLE <from> TO <to>`.
+#[no_mangle]
+pub extern "C" fn clickhouse__rename_table(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let from = str_field(&v, "from")?;
+        let to = str_field(&v, "to")?;
+        exec_sql(&v, &format!("RENAME TABLE {} TO {}", from, to))
+    })
+}
+
+/// Active parts of a table from `system.parts` — partition, rows, on-disk and
+/// compressed/uncompressed bytes, modification time. Useful for storage and
+/// compression-ratio inspection.
+#[no_mangle]
+pub extern "C" fn clickhouse__parts(args: *const c_char) -> *const c_char {
+    ffi_call(args, |v| {
+        let table = str_field(&v, "table")?;
+        let db = opt_str(&v, "database").unwrap_or("default");
+        let sql = format!(
+            "SELECT partition, name, rows, bytes_on_disk, data_compressed_bytes, \
+             data_uncompressed_bytes, modification_time \
+             FROM system.parts WHERE database = '{}' AND table = '{}' AND active \
+             ORDER BY name",
+            escape_string(db),
+            escape_string(table)
+        );
+        let r = query_json(&v, &sql)?;
+        Ok(json!({ "value": data_rows(&r) }))
+    })
+}
+
 /// Generic escape hatch: POST arbitrary `sql`; `json` controls whether the
 /// result is parsed (SELECT) or treated as a no-row statement.
 #[no_mangle]

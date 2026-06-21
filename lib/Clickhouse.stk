@@ -181,6 +181,19 @@ fn Clickhouse::optimize ($table, %opts) {
     Clickhouse::_decode("optimize", clickhouse__optimize(to_json($r)))->{ok}
 }
 
+## RENAME TABLE $from TO $to.
+fn Clickhouse::rename_table ($from, $to, %opts) {
+    val $r = Clickhouse::_req({ from => $from, to => $to }, \%opts)
+    Clickhouse::_decode("rename_table", clickhouse__rename_table(to_json($r)))->{ok}
+}
+
+## Active parts of $table from system.parts (partition, rows, on-disk +
+## compressed/uncompressed bytes, modification time). %opts{database}.
+fn Clickhouse::parts ($table, %opts) {
+    val $r = Clickhouse::_req({ table => $table, database => $opts{database} }, \%opts)
+    @{ Clickhouse::_decode("parts", clickhouse__parts(to_json($r)))->{value} }
+}
+
 ## Escape hatch: run arbitrary $sql. %opts{json} (default true) parses a
 ## SELECT result; pass json => 0 for a no-row statement.
 fn Clickhouse::raw ($sql, %opts) {
