@@ -22,6 +22,8 @@ its HTTP interface (default port 8123). Opt-in package tier.
 
 ### [`strykelang`](https://github.com/MenkeTechnologies/strykelang) &middot; [`MenkeTechnologiesMeta`](https://github.com/MenkeTechnologies/MenkeTechnologiesMeta) · [`stryke-duckdb`](https://github.com/MenkeTechnologies/stryke-duckdb) · [`stryke-postgres`](https://github.com/MenkeTechnologies/stryke-postgres) · [`stryke-search`](https://github.com/MenkeTechnologies/stryke-search)
 
+### [`Read the Docs`](https://menketechnologies.github.io/stryke-clickhouse/) &middot; [`Engineering Report`](https://menketechnologies.github.io/stryke-clickhouse/report.html)
+
 ---
 
 ## Table of Contents
